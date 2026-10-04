@@ -803,10 +803,46 @@ input[type="text"]:focus, input[type="email"]:focus, input[type="tel"]:focus, se
 </footer>
 <script>
 (function () {
-  window.RC = window.RC || {};
-  // Set this to the waitlist endpoint (Google Apps Script web app URL) when the site goes live.
-  RC.WAITLIST_ENDPOINT = '';
+  var RC = window.RC = window.RC || {};
+  // Every signup goes to the "Ranchless Cattle Co. Signups" Google Form, which feeds the
+  // "Ranchless Cattle Co. Signups (Responses)" Google Sheet in the owner's Drive.
+  RC.SIGNUP_FORM = {
+    action: 'https://docs.google.com/forms/d/e/1FAIpQLSeeBuqHk6DJOSqNFPI7RJZa6Fyp3suVUBCFATbetCg-7Cc9Rw/formResponse',
+    fields: {
+      type: 'entry.402257044',
+      name: 'entry.2027743535',
+      email: 'entry.315138065',
+      phone: 'entry.991240681',
+      city: 'entry.1906823912',
+      details: 'entry.2066149636'
+    }
+  };
+  var TYPE_LABELS = { customer: 'Founding list', store: 'Ranch Store list', partner: 'Farm application' };
+  var DETAIL_LABELS = {
+    interest: 'Interested in', breed: 'Breed', program: 'Program', addons: 'Add-ons', estimate: 'Estimate so far',
+    tag: 'Tag', wants: 'Would buy', farm: 'Farm', products: 'Products', license: 'Licensing', notes: 'Notes', page: 'Page'
+  };
+  var MAIN_KEYS = ['form_type', 'name', 'email', 'phone', 'city', 'county', 'submitted_at'];
   var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function buildBody(data) {
+    var F = RC.SIGNUP_FORM.fields;
+    var body = new URLSearchParams();
+    var type = data.get('form_type') || '';
+    body.append(F.type, TYPE_LABELS[type] || type);
+    body.append(F.name, data.get('name') || '');
+    body.append(F.email, data.get('email') || '');
+    body.append(F.phone, data.get('phone') || '');
+    var city = data.get('city') || (data.get('county') ? data.get('county') + ' County' : '');
+    body.append(F.city, city);
+    var lines = [];
+    data.forEach(function (v, k) {
+      if (MAIN_KEYS.indexOf(k) !== -1 || !String(v).trim()) return;
+      lines.push((DETAIL_LABELS[k] || k) + ': ' + v);
+    });
+    body.append(F.details, lines.join('\n'));
+    return body;
+  }
 
   RC.wireForm = function (opts) {
     var form = document.getElementById(opts.form);
@@ -831,14 +867,12 @@ input[type="text"]:focus, input[type="email"]:focus, input[type="tel"]:focus, se
       }
       var fd = new FormData(form);
       var data = new URLSearchParams();
-      fd.forEach(function (v, k) { if (data.has(k)) { data.set(k, data.get(k) + ', ' + v); } else { data.append(k, v); } });
+      fd.forEach(function (v, k) { v = String(v).trim(); if (data.has(k)) { data.set(k, data.get(k) + ', ' + v); } else { data.append(k, v); } });
       if (opts.extra) opts.extra(data);
       data.append('page', location.pathname.split('/').pop() || 'index.html');
-      data.append('submitted_at', new Date().toISOString());
       function done() { if (opts.onDone) opts.onDone(); form.hidden = true; thanks.hidden = false; }
-      if (!RC.WAITLIST_ENDPOINT) { done(); return; }
       submit.disabled = true; submit.textContent = 'Sending…';
-      fetch(RC.WAITLIST_ENDPOINT, { method: 'POST', mode: 'no-cors', body: data })
+      fetch(RC.SIGNUP_FORM.action, { method: 'POST', mode: 'no-cors', body: buildBody(data) })
         .then(done)
         .catch(function () {
           status.textContent = "We couldn't send that. Check your connection and try again.";
